@@ -1,0 +1,49 @@
+---
+- name: Deploy Spring Petclinic to EC2
+  hosts: app_servers
+  become: true
+  vars:
+    local_jar_path:  /Users/msreddy/spring-petclinic/target/spring-petclinic-3.5.0-SNAPSHOT.jar
+    remote_jar_path: /opt/spring-petclinic.jar
+    log_file: /opt/spring.log
+
+  tasks:
+    - name: Ensure Java is installed
+      ansible.builtin.apt:
+        name: openjdk-17-jdk
+        state: present
+        update_cache: true
+
+    - name: Create /opt directory if it doesn't exist
+      ansible.builtin.file:
+        path: /opt
+        state: directory
+        mode: '0755'
+
+    - name: Copy JAR to EC2
+      ansible.builtin.copy:
+        src: "{{ local_jar_path }}"
+        dest: "{{ remote_jar_path }}"
+        mode: '0755'
+
+    - name: Kill existing Spring Boot process (if any)
+      ansible.builtin.shell: |
+        pkill -f spring-petclinic.jar || true
+      args:
+        executable: /bin/bash
+      register: kill_result
+      failed_when: false
+      changed_when: false
+
+    - name: Run Spring Boot app in background
+      ansible.builtin.shell: |
+        nohup java -jar {{ remote_jar_path }} > {{ log_file }} 2>&1 &
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Wait for application to be available
+      ansible.builtin.wait_for:
+        port: 8080
+        delay: 5
+        timeout: 60
